@@ -3,11 +3,34 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>zoo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Zoo</title>
   </head>
   <body>
-    <div id="app"></div>
+    <!-- 3D Canvas -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Start Screen -->
+    <div id="start-screen">
+      <div id="start-content">
+        <h1>ZOO</h1>
+        <p>Explore the zoo and find all the hidden stars</p>
+        <button id="play-btn">Play</button>
+        <p class="hint" id="controls-hint"></p>
+      </div>
+    </div>
+
+    <!-- In-Game HUD -->
+    <div id="hud" style="display:none;">
+      <div id="hud-stars">Stars: <span id="stars-count">0</span></div>
+      <div id="game-message"></div>
+      <div id="crosshair"></div>
+    </div>
+
+    <!-- Mobile Touch Zones -->
+    <div id="joystick-zone"></div>
+    <div id="look-zone"></div>
+
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
