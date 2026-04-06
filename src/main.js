@@ -3,7 +3,7 @@ import { initEngine, onUpdate, startLoop } from './core/engine.js';
 import { createScene, createCamera } from './core/scene.js';
 import { createPhysicsWorld, stepPhysics } from './core/physics.js';
 import { initInput, isTouchDevice } from './core/input.js';
-import { initAudio } from './core/audio.js';
+import { initAudio, playStartSound, playStarSound, startFootsteps } from './core/audio.js';
 import { gameStore } from './core/state.js';
 import { createPlayer, updatePlayer } from './player/controller.js';
 import { buildZooWorld } from './world/zoo-map.js';
@@ -26,14 +26,14 @@ async function main() {
   // Build zoo
   const { stars } = buildZooWorld(scene, world);
 
-  // Player
-  const playerBody = createPlayer(camera, world);
+  // Player (pass scene so camera can be added to scene graph for arms)
+  const playerBody = createPlayer(camera, world, scene);
 
   // Input
   initInput(canvas);
   initMobileControls();
 
-  // Audio (minimal — just initialise, sounds added later)
+  // Audio
   initAudio();
 
   // HUD
@@ -67,6 +67,7 @@ async function main() {
       if (dist < 1.2) {
         star.visible = false;
         gameStore.getState().addStar();
+        playStarSound();
       }
     }
   });

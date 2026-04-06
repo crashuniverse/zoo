@@ -20,9 +20,10 @@ export function initMobileControls() {
     color: 'rgba(255,255,255,0.4)',
   });
 
-  moveManager.on('move', (_e, data) => {
-    if (data.vector) {
-      setJoystickMove(data.vector.x, data.vector.y);
+  moveManager.on('move', (evt) => {
+    const d = evt.data || evt;
+    if (d.vector) {
+      setJoystickMove(d.vector.x, d.vector.y);
     }
   });
   moveManager.on('end', () => {
