@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { EXRLoader } from 'three/addons/loaders/EXRLoader.js';
 
-const EXR_PATH = '/src/assets/lighting/rooitou_park_4k.exr';
+const EXR_PATH = '/assets/lighting/rooitou_park_4k.exr';
 
 export function createScene() {
   const scene = new THREE.Scene();

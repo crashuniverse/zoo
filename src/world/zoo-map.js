@@ -6,7 +6,7 @@ const ZOO_HALF = 100;   // expanded from 36 → 100 (200×200 world)
 
 /* ── GLB model loader helper ── */
 const loader = new GLTFLoader();
-const MODEL_BASE = '/src/assets/kenney_nature_kit_models/GLTF format/';
+const MODEL_BASE = '/assets/kenney_nature_kit_models/GLTF format/';
 const modelCache = {};
 
 function loadModel(name) {
