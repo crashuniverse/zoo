@@ -18,7 +18,7 @@ const BOB_FREQ = 10;
 const BOB_AMOUNT_Y = 0.04;
 const BOB_AMOUNT_X = 0.02;
 
-let body, yaw = 0, pitch = 0;
+let body, collider, charCtrl, yaw = 0, pitch = 0;
 let velocity = new THREE.Vector3();
 let bobPhase = 0;
 
@@ -28,7 +28,14 @@ export function createPlayer(camera, world, scene) {
   body = world.createRigidBody(bodyDesc);
 
   const colliderDesc = RAPIER.ColliderDesc.capsule(PLAYER_HEIGHT / 2, PLAYER_RADIUS);
-  world.createCollider(colliderDesc, body);
+  collider = world.createCollider(colliderDesc, body);
+
+  // Kinematic character controller — computes collision-corrected movement each frame
+  charCtrl = world.createCharacterController(0.01);
+  charCtrl.setMaxSlopeClimbAngle(45 * Math.PI / 180);
+  charCtrl.setMinSlopeSlideAngle(30 * Math.PI / 180);
+  charCtrl.enableAutostep(0.5, 0.2, true);
+  charCtrl.enableSnapToGround(0.2);
 
   camera.position.set(0, PLAYER_HEIGHT, 5);
   camera.rotation.order = 'YXZ';
@@ -104,12 +111,15 @@ export function updatePlayer(camera, delta) {
   const headBobY = Math.sin(bobPhase) * BOB_AMOUNT_Y * bobFactor;
   const headBobX = Math.cos(bobPhase * 0.5) * BOB_AMOUNT_X * bobFactor;
 
-  // ---- Apply position ----
+  // ---- Apply position with collision response ----
   const pos = body.translation();
+  const desiredMovement = { x: velocity.x * delta, y: 0, z: velocity.z * delta };
+  charCtrl.computeColliderMovement(collider, desiredMovement);
+  const corrected = charCtrl.computedMovement();
   const newPos = {
-    x: pos.x + velocity.x * delta,
+    x: pos.x + corrected.x,
     y: PLAYER_HEIGHT,
-    z: pos.z + velocity.z * delta,
+    z: pos.z + corrected.z,
   };
 
   body.setNextKinematicTranslation(newPos);

@@ -1,27 +1,76 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { addStaticBox } from '../core/physics.js';
 
-const ZOO_HALF = 36;
+const ZOO_HALF = 100;   // expanded from 36 → 100 (200×200 world)
 
-export function buildZooWorld(scene, world) {
+/* ── GLB model loader helper ── */
+const loader = new GLTFLoader();
+const MODEL_BASE = '/src/assets/kenney_nature_kit_models/GLTF format/';
+const modelCache = {};
+
+function loadModel(name) {
+  if (modelCache[name]) return modelCache[name];
+  const p = new Promise((resolve) => {
+    loader.load(MODEL_BASE + name, (gltf) => {
+      const m = gltf.scene;
+      m.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+      modelCache[name] = m;
+      resolve(m);
+    });
+  });
+  modelCache[name] = p;
+  return p;
+}
+
+async function placeModel(scene, name, x, y, z, scale = 1, rotY = 0) {
+  let m = modelCache[name];
+  if (!m || m instanceof Promise) m = await loadModel(name);
+  const clone = m.clone();
+  clone.position.set(x, y, z);
+  if (scale !== 1) clone.scale.setScalar(scale);
+  if (rotY !== 0) clone.rotation.y = rotY;
+  scene.add(clone);
+  return clone;
+}
+
+/* seeded-ish random for reproducible layouts */
+function seededRandom(seed) {
+  let s = seed;
+  return () => { s = (s * 16807 + 0) % 2147483647; return (s - 1) / 2147483646; };
+}
+
+export async function buildZooWorld(scene, world) {
   scene.add(makeStripedGround());
   addStaticBox(world, ZOO_HALF, 0.1, ZOO_HALF, 0, -0.1, 0);
 
   buildBoundaryWalls(scene, world);
   buildPaths(scene);
 
+  /* ── Enclosures (more of them, spread out) ── */
   const enclosures = [
-    { name: 'Lions',     color: 0xd4a44c, pos: [-12, 0, -8],   size: [5, 2, 5] },
-    { name: 'Elephants', color: 0x7a7a7a, pos: [12, 0, -8],    size: [6, 3, 6] },
-    { name: 'Monkeys',   color: 0x7B3F00, pos: [-12, 0, -22],  size: [5, 2, 5] },
-    { name: 'Penguins',  color: 0x5ba3c9, pos: [12, 0, -22],   size: [5, 1.6, 5] },
-    { name: 'Giraffes',  color: 0xd4b347, pos: [0, 0, -32],    size: [6, 4, 6] },
+    { name: 'Lions',       color: 0xd4a44c, pos: [-20, 0, -12],  size: [7, 2, 7] },
+    { name: 'Elephants',   color: 0x7a7a7a, pos: [20, 0, -12],   size: [8, 3, 8] },
+    { name: 'Monkeys',     color: 0x7B3F00, pos: [-20, 0, -35],  size: [6, 2, 6] },
+    { name: 'Penguins',    color: 0x5ba3c9, pos: [20, 0, -35],   size: [6, 1.6, 6] },
+    { name: 'Giraffes',    color: 0xd4b347, pos: [0, 0, -55],    size: [8, 4, 8] },
+    { name: 'Bears',       color: 0x5c3a1e, pos: [-40, 0, -55],  size: [7, 2.5, 7] },
+    { name: 'Zebras',      color: 0xcccccc, pos: [40, 0, -55],   size: [8, 2, 8] },
+    { name: 'Tigers',      color: 0xd47a20, pos: [-40, 0, -12],  size: [7, 2.5, 7] },
+    { name: 'Hippos',      color: 0x7a6a8a, pos: [40, 0, -12],   size: [7, 2, 7] },
+    { name: 'Flamingos',   color: 0xf0a0b0, pos: [-60, 0, -35],  size: [6, 1.8, 6] },
+    { name: 'Wolves',      color: 0x666666, pos: [60, 0, -35],   size: [6, 2.2, 6] },
+    { name: 'Deer',        color: 0xa08050, pos: [0, 0, -80],     size: [8, 2, 8] },
   ];
   enclosures.forEach((e) => buildEnclosure(scene, world, e));
 
+  /* ── Stars (more hidden around bigger map) ── */
   const starPositions = [
-    [-5, 1.2, -3], [5, 1.2, -3], [0, 1.2, -15],
-    [-8, 1.2, -28], [8, 1.2, -28], [-20, 1.2, -15], [20, 1.2, -15],
+    [-5, 1.2, -3], [5, 1.2, -3], [0, 1.2, -20],
+    [-15, 1.2, -45], [15, 1.2, -45], [-35, 1.2, -20], [35, 1.2, -20],
+    [-55, 1.2, -50], [55, 1.2, -50], [0, 1.2, -70],
+    [-70, 1.2, -10], [70, 1.2, -10], [-30, 1.2, -75], [30, 1.2, -75],
+    [0, 1.2, -92],
   ];
   const stars = [];
   starPositions.forEach((p) => {
@@ -33,38 +82,395 @@ export function buildZooWorld(scene, world) {
 
   buildEntrance(scene, world);
 
-  [[-6,0,1],[6,0,1],[-18,0,-5],[18,0,-5],[-18,0,-18],[18,0,-18],
-   [-6,0,-30],[6,0,-30],[-24,0,-10],[24,0,-10],[-24,0,-28],[24,0,-28],
-   [-30,0,-2],[30,0,-2],[0,0,-10]].forEach((p) => {
+  /* ── Procedural decorations (primitive fallbacks, placed immediately) ── */
+  const treePositions = [
+    [-8,0,2],[8,0,2],[-25,0,-5],[25,0,-5],[-25,0,-25],[25,0,-25],
+    [-8,0,-45],[8,0,-45],[-50,0,-10],[50,0,-10],[-50,0,-45],[50,0,-45],
+    [-70,0,-5],[70,0,-5],[0,0,-15],[-35,0,-70],[35,0,-70],
+    [-80,0,-20],[80,0,-20],[-80,0,-50],[80,0,-50],[-15,0,-90],[15,0,-90],
+    [-65,0,-65],[65,0,-65],[0,0,-42],[-45,0,-80],[45,0,-80],
+  ];
+  treePositions.forEach((p) => {
     const t = makeTree(); t.position.set(p[0],p[1],p[2]); scene.add(t);
+    addStaticBox(world, 0.2, 0.7, 0.2, p[0], 0.7, p[2]); // trunk collider
   });
 
-  [[-2.5,0.3,-5],[2.5,0.3,-5],[-2.5,0.3,-15],[2.5,0.3,-15],
-   [-2.5,0.3,-25],[2.5,0.3,-25]].forEach((p) => {
-    const b = makeBench(); b.position.set(p[0],p[1],p[2]); scene.add(b);
-  });
+  /* Benches along main path */
+  for (let z = -5; z > -90; z -= 10) {
+    const bL = makeBench(); bL.position.set(-2.8, 0.3, z); scene.add(bL);
+    addStaticBox(world, 0.7, 0.35, 0.25, -2.8, 0.35, z);
+    const bR = makeBench(); bR.position.set(2.8, 0.3, z); scene.add(bR);
+    addStaticBox(world, 0.7, 0.35, 0.25, 2.8, 0.35, z);
+  }
 
-  [[-1.8,0,-2],[1.8,0,-2],[-1.8,0,-10],[1.8,0,-10],
-   [-1.8,0,-18],[1.8,0,-18],[-1.8,0,-26],[1.8,0,-26]].forEach((p) => {
-    const l = makeLampPost(); l.position.set(p[0],p[1],p[2]); scene.add(l);
-  });
+  /* Lamp posts */
+  for (let z = -2; z > -95; z -= 8) {
+    for (const x of [-1.8, 1.8]) {
+      const l = makeLampPost(); l.position.set(x, 0, z); scene.add(l);
+      addStaticBox(world, 0.07, 1.75, 0.07, x, 1.75, z); // pole collider
+    }
+  }
 
-  [[-20,0,-3],[22,0,-12],[-15,0,-30],[28,0,-25],[-28,0,-20],[15,0,-35]].forEach((p) => {
-    const r = makeRock(); r.position.set(p[0],p[1],p[2]); scene.add(r);
-  });
+  /* Rocks scattered around */
+  const rng = seededRandom(42);
+  for (let i = 0; i < 25; i++) {
+    const rx = (rng() - 0.5) * 180, rz = -rng() * 90 - 5;
+    const r = makeRock();
+    r.position.set(rx, 0, rz);
+    scene.add(r);
+    addStaticBox(world, 0.4, 0.35, 0.4, rx, 0.35, rz);
+  }
 
   const fountain = makeFountain();
-  fountain.position.set(0, 0, -10);
+  fountain.position.set(0, 0, -15);
   scene.add(fountain);
+  addStaticBox(world, 2.2, 0.3, 2.2, 0, 0.3, -15); // basin collider
+  addStaticBox(world, 0.25, 0.75, 0.25, 0, 0.75, -15); // pillar collider
 
-  const s1 = makeDirSign('\u2190 Lions & Monkeys');
-  s1.position.set(-2, 0, -6); scene.add(s1);
-  const s2 = makeDirSign('Elephants & Penguins \u2192');
-  s2.position.set(2, 0, -6); scene.add(s2);
-  const s3 = makeDirSign('\u2191 Giraffes');
-  s3.position.set(0, 0, -12); scene.add(s3);
+  /* Direction signs */
+  const s1 = makeDirSign('\u2190 Lions, Tigers & Flamingos');
+  s1.position.set(-3, 0, -8); scene.add(s1);
+  const s2 = makeDirSign('Elephants, Hippos & Wolves \u2192');
+  s2.position.set(3, 0, -8); scene.add(s2);
+  const s3 = makeDirSign('\u2191 Giraffes, Bears & Deer');
+  s3.position.set(0, 0, -18); scene.add(s3);
+
+  /* ═══════════════════════════════════════════
+     KENNEY NATURE KIT — GLB MODEL PLACEMENT
+     (loaded async, world is playable immediately)
+     ═══════════════════════════════════════════ */
+  placeNatureModels(scene, world);
 
   return { stars };
+}
+
+/* ── Async model placement (non-blocking) ── */
+async function placeNatureModels(scene, world) {
+  const rng = seededRandom(1337);
+  const R = () => rng();
+  const RI = (min, max) => min + Math.floor(R() * (max - min + 1));
+  const RF = (min, max) => min + R() * (max - min);
+
+  /* ─── Dense forest borders ─── */
+  const treeModels = [
+    'tree_default.glb', 'tree_detailed.glb', 'tree_oak.glb', 'tree_fat.glb',
+    'tree_pineRoundA.glb', 'tree_pineRoundB.glb', 'tree_pineRoundC.glb',
+    'tree_pineTallA.glb', 'tree_pineTallB.glb',
+    'tree_tall.glb', 'tree_thin.glb', 'tree_simple.glb',
+    'tree_cone.glb', 'tree_blocks.glb', 'tree_plateau.glb',
+  ];
+  const fallTreeModels = [
+    'tree_default_fall.glb', 'tree_detailed_fall.glb', 'tree_oak_fall.glb',
+    'tree_fat_fall.glb', 'tree_cone_fall.glb', 'tree_simple_fall.glb',
+  ];
+  const darkTreeModels = [
+    'tree_default_dark.glb', 'tree_detailed_dark.glb', 'tree_oak_dark.glb',
+    'tree_cone_dark.glb', 'tree_simple_dark.glb',
+  ];
+
+  // Outer forest belt (ring around the boundary)
+  for (let i = 0; i < 350; i++) {
+    const side = RI(0, 3);
+    let x, z;
+    if (side === 0) { x = RF(-95, 95); z = RF(-95, -80); }       // far back
+    else if (side === 1) { x = RF(-95, 95); z = RF(10, 25); }      // near entrance (behind walls)
+    else if (side === 2) { x = RF(-95, -70); z = RF(-95, 25); }   // left
+    else { x = RF(70, 95); z = RF(-95, 25); }                      // right
+
+    const allTrees = [...treeModels, ...fallTreeModels, ...darkTreeModels];
+    const model = allTrees[RI(0, allTrees.length - 1)];
+    const scale = RF(1.2, 2.5);
+    const rot = RF(0, Math.PI * 2);
+    placeModel(scene, model, x, 0, z, scale, rot);
+  }
+
+  // Interior scattered trees (between paths and enclosures)
+  const interiorTreeZones = [
+    { xMin: -65, xMax: -10, zMin: -70, zMax: -2, count: 30 },  // left interior
+    { xMin: 10, xMax: 65, zMin: -70, zMax: -2, count: 30 },    // right interior
+    { xMin: -65, xMax: 65, zMin: -95, zMax: -65, count: 20 },  // deep back
+  ];
+  for (const zone of interiorTreeZones) {
+    for (let i = 0; i < zone.count; i++) {
+      const x = RF(zone.xMin, zone.xMax);
+      const z = RF(zone.zMin, zone.zMax);
+      // Skip if too close to paths (x ∈ [-3,3]) or enclosures
+      if (Math.abs(x) < 5 && z > -95 && z < 5) continue;
+      const model = treeModels[RI(0, treeModels.length - 1)];
+      placeModel(scene, model, x, 0, z, RF(1.0, 2.0), RF(0, Math.PI * 2));
+    }
+  }
+
+  /* ─── Bushes & plants along paths ─── */
+  const bushModels = [
+    'plant_bush.glb', 'plant_bushDetailed.glb', 'plant_bushLarge.glb',
+    'plant_bushSmall.glb', 'plant_bushTriangle.glb', 'plant_bushLargeTriangle.glb',
+  ];
+  for (let z = -4; z > -92; z -= 3) {
+    for (const xOff of [-4.5, 4.5]) {
+      if (R() < 0.55) continue; // skip some for variety
+      const model = bushModels[RI(0, bushModels.length - 1)];
+      placeModel(scene, model, xOff + RF(-0.5, 0.5), 0, z + RF(-0.5, 0.5), RF(1.0, 2.0), RF(0, Math.PI * 2));
+    }
+  }
+
+  /* ─── Flower gardens ─── */
+  const flowerModels = [
+    'flower_purpleA.glb', 'flower_purpleB.glb', 'flower_purpleC.glb',
+    'flower_redA.glb', 'flower_redB.glb', 'flower_redC.glb',
+    'flower_yellowA.glb', 'flower_yellowB.glb', 'flower_yellowC.glb',
+  ];
+  // Flower beds near enclosures
+  const flowerBedCenters = [
+    [-20, -5], [20, -5], [-20, -28], [20, -28], [0, -48],
+    [-40, -5], [40, -5], [-60, -28], [60, -28], [0, -73],
+    [-40, -73], [40, -73],
+  ];
+  for (const [cx, cz] of flowerBedCenters) {
+    const count = RI(6, 14);
+    for (let i = 0; i < count; i++) {
+      const fx = cx + RF(-3, 3);
+      const fz = cz + RF(-2, 2);
+      const model = flowerModels[RI(0, flowerModels.length - 1)];
+      placeModel(scene, model, fx, 0, fz, RF(1.0, 2.0), RF(0, Math.PI * 2));
+    }
+  }
+
+  /* ─── Grass tufts scattered widely ─── */
+  const grassModels = ['grass.glb', 'grass_large.glb', 'grass_leafs.glb', 'grass_leafsLarge.glb'];
+  for (let i = 0; i < 200; i++) {
+    const x = RF(-90, 90);
+    const z = RF(-95, 5);
+    const model = grassModels[RI(0, grassModels.length - 1)];
+    placeModel(scene, model, x, 0, z, RF(1.0, 2.5), RF(0, Math.PI * 2));
+  }
+
+  /* ─── Rocks & stones ─── */
+  const rockModels = [
+    'rock_largeA.glb', 'rock_largeB.glb', 'rock_largeC.glb',
+    'rock_smallA.glb', 'rock_smallB.glb', 'rock_smallC.glb', 'rock_smallD.glb',
+    'rock_tallA.glb', 'rock_tallB.glb',
+    'stone_largeA.glb', 'stone_largeB.glb',
+    'stone_smallA.glb', 'stone_smallB.glb',
+  ];
+  for (let i = 0; i < 60; i++) {
+    const x = RF(-90, 90);
+    const z = RF(-95, 5);
+    if (Math.abs(x) < 4 && z > -95) continue;
+    const model = rockModels[RI(0, rockModels.length - 1)];
+    placeModel(scene, model, x, 0, z, RF(0.8, 2.5), RF(0, Math.PI * 2));
+  }
+
+  /* ─── Mushroom clusters ─── */
+  const mushroomModels = [
+    'mushroom_red.glb', 'mushroom_redGroup.glb', 'mushroom_redTall.glb',
+    'mushroom_tan.glb', 'mushroom_tanGroup.glb', 'mushroom_tanTall.glb',
+  ];
+  const mushroomCenters = [[-30, -15], [30, -40], [-55, -60], [55, -70], [-10, -85], [10, -60]];
+  for (const [cx, cz] of mushroomCenters) {
+    for (let i = 0; i < RI(3, 7); i++) {
+      const model = mushroomModels[RI(0, mushroomModels.length - 1)];
+      placeModel(scene, model, cx + RF(-2, 2), 0, cz + RF(-2, 2), RF(1.0, 2.0), RF(0, Math.PI * 2));
+    }
+  }
+
+  /* ─── Log piles & stumps (woodland feel) ─── */
+  const woodModels = [
+    'log.glb', 'log_large.glb', 'log_stack.glb', 'log_stackLarge.glb',
+    'stump_old.glb', 'stump_round.glb', 'stump_roundDetailed.glb',
+    'stump_square.glb', 'stump_squareDetailed.glb',
+  ];
+  for (let i = 0; i < 30; i++) {
+    const x = RF(-85, 85);
+    const z = RF(-90, 0);
+    if (Math.abs(x) < 6) continue;
+    const model = woodModels[RI(0, woodModels.length - 1)];
+    placeModel(scene, model, x, 0, z, RF(1.0, 2.0), RF(0, Math.PI * 2));
+  }
+
+  /* ─── Campfire rest areas ─── */
+  const campfireModels = ['campfire_stones.glb', 'campfire_logs.glb'];
+  const campfireSpots = [[-30, -25], [30, -50], [-55, -45], [55, -20], [0, -65]];
+  for (const [cx, cz] of campfireSpots) {
+    const cfModel = campfireModels[RI(0, campfireModels.length - 1)];
+    await placeModel(scene, cfModel, cx, 0, cz, 1.5);
+    // Surrounding logs
+    for (let a = 0; a < 3; a++) {
+      const angle = (a / 3) * Math.PI * 2 + RF(-0.3, 0.3);
+      const dist = RF(1.5, 2.5);
+      placeModel(scene, 'log.glb', cx + Math.cos(angle) * dist, 0, cz + Math.sin(angle) * dist, 1.0, angle);
+    }
+  }
+
+  /* ─── Fences along some outer areas ─── */
+  const fenceModels = ['fence_simple.glb', 'fence_planks.glb', 'fence_planksDouble.glb'];
+  // Left boundary fence
+  for (let z = 0; z > -90; z -= 2) {
+    const model = fenceModels[RI(0, fenceModels.length - 1)];
+    placeModel(scene, model, -68, 0, z, 1.2, 0);
+  }
+  // Right boundary fence
+  for (let z = 0; z > -90; z -= 2) {
+    const model = fenceModels[RI(0, fenceModels.length - 1)];
+    placeModel(scene, model, 68, 0, z, 1.2, 0);
+  }
+
+  /* ─── Tents / rest stops ─── */
+  const tentSpots = [[-45, -30], [45, -65], [-65, -75], [65, -15]];
+  const tentModels = ['tent_detailedOpen.glb', 'tent_smallOpen.glb'];
+  for (const [tx, tz] of tentSpots) {
+    const model = tentModels[RI(0, tentModels.length - 1)];
+    placeModel(scene, model, tx, 0, tz, 1.5, RF(0, Math.PI * 2));
+  }
+
+  /* ─── Bridges over decorative streams ─── */
+  // Bridge crossing 1 (left area)
+  placeModel(scene, 'bridge_wood.glb', -30, 0, -45, 1.5, Math.PI / 2);
+  placeModel(scene, 'bridge_wood.glb', 30, 0, -60, 1.5, Math.PI / 2);
+  // Stone bridge near giraffes
+  placeModel(scene, 'bridge_stone.glb', 0, 0, -62, 1.5, 0);
+
+  /* ─── Decorative river segments ─── */
+  // Use ground_river tiles to create a winding stream
+  const riverTiles = [
+    { model: 'ground_riverStraight.glb', x: -30, z: -40, rot: 0 },
+    { model: 'ground_riverStraight.glb', x: -30, z: -42, rot: 0 },
+    { model: 'ground_riverBend.glb', x: -30, z: -44, rot: 0 },
+    { model: 'ground_riverStraight.glb', x: -28, z: -44, rot: Math.PI / 2 },
+    { model: 'ground_riverStraight.glb', x: -26, z: -44, rot: Math.PI / 2 },
+    { model: 'ground_riverEnd.glb', x: -24, z: -44, rot: Math.PI / 2 },
+    // Second stream near right side
+    { model: 'ground_riverStraight.glb', x: 30, z: -55, rot: 0 },
+    { model: 'ground_riverStraight.glb', x: 30, z: -57, rot: 0 },
+    { model: 'ground_riverStraight.glb', x: 30, z: -59, rot: 0 },
+    { model: 'ground_riverBend.glb', x: 30, z: -61, rot: Math.PI },
+    { model: 'ground_riverEnd.glb', x: 32, z: -61, rot: Math.PI / 2 },
+  ];
+  for (const rt of riverTiles) {
+    placeModel(scene, rt.model, rt.x, 0.01, rt.z, 2.0, rt.rot);
+  }
+
+  /* ─── Lily pads on water areas ─── */
+  const lilyPositions = [[-30, -41], [-29, -43], [-28, -44], [30, -56], [31, -58]];
+  for (const [lx, lz] of lilyPositions) {
+    const lilyModel = R() > 0.5 ? 'lily_large.glb' : 'lily_small.glb';
+    placeModel(scene, lilyModel, lx + RF(-0.3, 0.3), 0.02, lz + RF(-0.3, 0.3), RF(1.0, 1.5), RF(0, Math.PI * 2));
+  }
+
+  /* ─── Statues & obelisks (points of interest) ─── */
+  placeModel(scene, 'statue_obelisk.glb', 0, 0, -15, 2.0);
+  placeModel(scene, 'statue_column.glb', -8, 0, -48, 1.5);
+  placeModel(scene, 'statue_column.glb', 8, 0, -48, 1.5);
+  placeModel(scene, 'statue_head.glb', 0, 0, -88, 2.5);
+  placeModel(scene, 'statue_ring.glb', -55, 0, -10, 2.0);
+  placeModel(scene, 'statue_block.glb', 55, 0, -85, 2.0);
+
+  /* ─── Canoe near water ─── */
+  placeModel(scene, 'canoe.glb', -32, 0.05, -40, 1.5, 0.3);
+  placeModel(scene, 'canoe_paddle.glb', -31.5, 0.1, -39.5, 1.5, 0.5);
+  placeModel(scene, 'canoe.glb', 32, 0.05, -56, 1.5, -0.4);
+
+  /* ─── Signs around the park ─── */
+  const signPositions = [
+    [-30, -10], [30, -10], [-50, -35], [50, -35],
+    [-20, -65], [20, -65], [0, -40],
+  ];
+  for (const [sx, sz] of signPositions) {
+    placeModel(scene, 'sign.glb', sx, 0, sz, 1.5, RF(0, Math.PI * 2));
+  }
+
+  /* ─── Stone & wood paths connecting areas ─── */
+  // Stone path to left enclosures
+  for (let i = 0; i < 12; i++) {
+    const model = R() > 0.5 ? 'path_stone.glb' : 'path_stoneCircle.glb';
+    placeModel(scene, model, -8 - i * 2.5 + RF(-0.3, 0.3), 0.01, -12 + RF(-0.3, 0.3), RF(1.0, 1.3), RF(0, Math.PI * 2));
+  }
+  // Wood path to right areas
+  for (let i = 0; i < 12; i++) {
+    const model = 'path_wood.glb';
+    placeModel(scene, model, 8 + i * 2.5 + RF(-0.3, 0.3), 0.01, -12 + RF(-0.3, 0.3), RF(1.0, 1.3), RF(0, Math.PI * 2));
+  }
+  // Stone path to deep enclosures
+  for (let i = 0; i < 15; i++) {
+    placeModel(scene, 'path_stone.glb', RF(-1, 1), 0.01, -30 - i * 3 + RF(-0.3, 0.3), RF(1.0, 1.3), RF(0, Math.PI * 2));
+  }
+
+  /* ─── Hanging moss on trees near water ─── */
+  const mossPositions = [[-32, 2.5, -38], [-28, 2.5, -46], [28, 2.5, -53], [32, 2.5, -63]];
+  for (const [mx, my, mz] of mossPositions) {
+    placeModel(scene, 'hanging_moss.glb', mx, my, mz, 1.5);
+  }
+
+  /* ─── Crops / garden area (educational farm zone) ─── */
+  const farmCenter = [55, -45];
+  const cropModels = [
+    'crop_carrot.glb', 'crop_melon.glb', 'crop_pumpkin.glb', 'crop_turnip.glb',
+    'crops_cornStageD.glb', 'crops_wheatStageB.glb', 'crops_bambooStageB.glb',
+  ];
+  for (let row = 0; row < 4; row++) {
+    for (let col = 0; col < 6; col++) {
+      const model = cropModels[RI(0, cropModels.length - 1)];
+      placeModel(scene, model,
+        farmCenter[0] - 5 + col * 2, 0,
+        farmCenter[1] - 3 + row * 2, 1.5);
+    }
+    // Dirt row
+    placeModel(scene, 'crops_dirtRow.glb',
+      farmCenter[0], 0.01, farmCenter[1] - 3 + row * 2, 2.0, Math.PI / 2);
+  }
+
+  /* ─── Pots scattered near buildings ─── */
+  const potSpots = [[-3, 2], [3, 2], [-20, -18], [20, -18], [-40, -18], [40, -18]];
+  for (const [px, pz] of potSpots) {
+    const model = R() > 0.5 ? 'pot_large.glb' : 'pot_small.glb';
+    placeModel(scene, model, px, 0, pz, RF(1.0, 1.5));
+  }
+
+  /* ─── Cliff features (dramatic backdrop) ─── */
+  // Back wall cliff face
+  for (let x = -80; x <= 80; x += 8) {
+    const cliffModel = R() > 0.5 ? 'cliff_rock.glb' : 'cliff_stone.glb';
+    placeModel(scene, cliffModel, x + RF(-2, 2), 0, -97 + RF(0, 2), RF(2.0, 3.0), RF(-0.2, 0.2));
+  }
+  // Side cliff accents
+  for (let z = -90; z < -20; z += 12) {
+    placeModel(scene, 'cliff_half_rock.glb', -96 + RF(0, 2), 0, z, RF(1.5, 2.5), Math.PI / 2);
+    placeModel(scene, 'cliff_half_stone.glb', 96 + RF(-2, 0), 0, z, RF(1.5, 2.5), -Math.PI / 2);
+  }
+
+  /* ─── Cactus garden (desert corner) ─── */
+  const cactusCenter = [-55, -80];
+  for (let i = 0; i < 12; i++) {
+    const model = R() > 0.5 ? 'cactus_short.glb' : 'cactus_tall.glb';
+    placeModel(scene, model,
+      cactusCenter[0] + RF(-6, 6), 0,
+      cactusCenter[1] + RF(-4, 4), RF(1.0, 2.0), RF(0, Math.PI * 2));
+  }
+  // Sandy platform for cactus area
+  placeModel(scene, 'platform_beach.glb', cactusCenter[0], 0, cactusCenter[1], 4.0);
+
+  /* ─── Palm tree area (tropical zone) ─── */
+  const palmCenter = [55, -80];
+  const palmModels = ['tree_palm.glb', 'tree_palmBend.glb', 'tree_palmShort.glb', 'tree_palmTall.glb',
+    'tree_palmDetailedShort.glb', 'tree_palmDetailedTall.glb'];
+  for (let i = 0; i < 15; i++) {
+    const model = palmModels[RI(0, palmModels.length - 1)];
+    placeModel(scene, model,
+      palmCenter[0] + RF(-8, 8), 0,
+      palmCenter[1] + RF(-6, 6), RF(1.2, 2.5), RF(0, Math.PI * 2));
+  }
+  // Grass platform for tropical zone
+  placeModel(scene, 'platform_grass.glb', palmCenter[0], 0, palmCenter[1], 4.0);
+
+  /* ─── Picnic area with flat plants ─── */
+  const picnicCenter = [0, -30];
+  const flatPlants = ['plant_flatShort.glb', 'plant_flatTall.glb'];
+  for (let i = 0; i < 8; i++) {
+    const model = flatPlants[RI(0, flatPlants.length - 1)];
+    placeModel(scene, model,
+      picnicCenter[0] + RF(-4, 4), 0,
+      picnicCenter[1] + RF(-3, 3), RF(1.0, 1.5));
+  }
 }
 
 /* ============ GROUND ============ */
@@ -98,7 +504,7 @@ function makeStripedGround() {
 /* ============ WALLS ============ */
 
 function buildBoundaryWalls(scene, world) {
-  const H = 3.5, T = 0.5, half = ZOO_HALF;
+  const H = 4, T = 0.6, half = ZOO_HALF;
   const wallMat = new THREE.MeshStandardMaterial({ color: 0x8a8278, roughness: 0.9 });
   const trimMat = new THREE.MeshStandardMaterial({ color: 0x6b635b });
   const pillarMat = new THREE.MeshStandardMaterial({ color: 0x6b635b });
@@ -112,11 +518,20 @@ function buildBoundaryWalls(scene, world) {
     addStaticBox(world, sx/2, H/2, sz/2, px, H/2, pz);
   });
 
+  /* Pillars along walls every ~20 units for visual interest */
   const pGeo = new THREE.BoxGeometry(1.2, H+0.6, 1.2);
+  // Corners
   [[-half,-half],[-half,half],[half,-half],[half,half]].forEach(([x,z])=>{
     const p = new THREE.Mesh(pGeo, pillarMat);
     p.position.set(x,(H+0.6)/2,z); p.castShadow=true; scene.add(p);
   });
+  // Intermediate pillars along each wall
+  for (let t = -half + 20; t < half; t += 20) {
+    for (const [x, z] of [[t, -half], [t, half], [-half, t], [half, t]]) {
+      const p = new THREE.Mesh(pGeo, pillarMat);
+      p.position.set(x, (H + 0.6) / 2, z); p.castShadow = true; scene.add(p);
+    }
+  }
 }
 
 /* ============ PATHS ============ */
@@ -127,10 +542,25 @@ function buildPaths(scene) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w,h), mat);
     m.rotation.x=-Math.PI/2; m.position.set(x,y,z); m.receiveShadow=true; scene.add(m);
   };
-  add(3.2, 68, 0, 0.015, -2);
-  add(68, 3.2, 0, 0.015, -10);
-  add(3.2, 20, -12, 0.012, -28);
-  add(3.2, 20,  12, 0.012, -28);
+  // Main central path (entrance to back)
+  add(3.5, 190, 0, 0.015, -2);
+  // East-west cross path near front
+  add(190, 3.5, 0, 0.015, -12);
+  // East-west cross path mid
+  add(190, 3.5, 0, 0.014, -35);
+  // East-west cross path deep
+  add(130, 3.2, 0, 0.013, -55);
+  // East-west cross path very deep
+  add(90, 3.2, 0, 0.012, -80);
+  // Left side path (connects enclosures vertically)
+  add(3.2, 50, -20, 0.012, -35);
+  add(3.2, 50, -40, 0.012, -35);
+  // Right side path
+  add(3.2, 50, 20, 0.012, -35);
+  add(3.2, 50, 40, 0.012, -35);
+  // Deep left/right paths
+  add(3.2, 30, -60, 0.011, -35);
+  add(3.2, 30, 60, 0.011, -35);
 }
 
 /* ============ ENCLOSURES ============ */

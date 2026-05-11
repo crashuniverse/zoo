@@ -24,7 +24,7 @@ async function main() {
   const world = createPhysicsWorld();
 
   // Build zoo
-  const { stars } = buildZooWorld(scene, world);
+  const { stars } = await buildZooWorld(scene, world);
 
   // Player (pass scene so camera can be added to scene graph for arms)
   const playerBody = createPlayer(camera, world, scene);
